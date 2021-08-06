@@ -39,7 +39,7 @@ import {
     BallotData,
     VarInt,
     Encrypt,
-    BitMask
+    BitMask,
 } from "boa-sdk-ts";
 import { IMarketCap, IAccountInformation, IProposalValidator } from "../../Types";
 import { IDatabaseConfig } from "../common/Config";
@@ -48,13 +48,12 @@ import { logger } from "../common/Logger";
 import { Storages } from "./Storages";
 import { TransactionPool } from "./TransactionPool";
 import moment from "moment";
-import { Buffer } from 'buffer'
+import { Buffer } from "buffer";
 import axios from "axios";
 import JSBI from "jsbi";
 import { SmartBuffer } from "smart-buffer";
-import { ValidatorData, IPreimage, IBallot } from "../../Types"
+import { ValidatorData, IPreimage, IBallot } from "../../Types";
 import { RequestVotera } from "../common/VoteraRequest";
-
 
 /**
  * The class that inserts and reads the ledger into the database.
@@ -731,45 +730,62 @@ export class LedgerStorage extends Storages {
     public putProposalResult(block: Block): Promise<void> {
         return new Promise<void>((resolve, reject) => {
             (async () => {
-                this.getOpenPropsals().then(async (rows: any[]) => { // get open proposals
-                    if (rows)   //check if open proposals exists
+                this.getOpenPropsals().then(async (rows: any[]) => {
+                    // get open proposals
+                    if (rows)
+                        //check if open proposals exists
                         for (let row of rows) {
-                            if (block.header.height.toString() == row.voting_end_height) {  //if any open proposal reached to vote enc height
-                                let block_validators: Array<IProposalValidator> = [];   //Array to keep the track of validators signature the block from start height to end height
+                            if (block.header.height.toString() == row.voting_end_height) {
+                                //if any open proposal reached to vote enc height
+                                let block_validators: Array<IProposalValidator> = []; //Array to keep the track of validators signature the block from start height to end height
                                 let start_height = row.vote_start_height;
-                                let block_count = 0; //total block count from start height to end height
-                                while (start_height <= row.vote_end_height) {   //loop for getting validation numbers of validators from start height to end height
-                                    let validation_count = 0;   //validation count of single validator
-                                    let validators = await this.getValidatorsAPI(start_height, null); //getting validator of block at height
+                                let block_count = row.vote_end_height - row.vote_start_height; //total block count from start height to end height
+                                for (let i = 0; i <= block_count; i++) {
+                                    //loop for getting validation numbers of validators from start height to end height
+                                    let validation_count = 0; //validation count of single validator
+                                    let validators = await this.getValidatorsAPI(start_height, null); //getting validator of block from start height to end height
                                     for (let validator of validators) {
-                                        let validator_index = block_validators.findIndex(elem => elem.address == validator.address); //getting the index
-                                        if (validator_index > -1) { //if the validator is already in the array
-                                            ++block_validators[validator_index].validates;  //validation count increased by one
+                                        let validator_index = block_validators.findIndex(
+                                            (elem) => elem.address == validator.address
+                                        ); //getting the index
+                                        if (validator_index > -1) {
+                                            //if the validator is already in the array
+                                            ++block_validators[validator_index].validates; //validation count increased by one
                                         } else {
-                                            let new_block_validator = { //else new validator of the block will be pushed to the array
+                                            let new_block_validator = {
+                                                //else new validator of the block will be pushed to the array
                                                 address: validator.address,
-                                                validates: ++validation_count
-                                            }
+                                                validates: ++validation_count,
+                                            };
                                             block_validators.push(new_block_validator);
                                         }
                                     }
                                     ++start_height; //for next block
-                                    ++block_count;  //counting the blocks till end height
                                 }
-                                for (let i = 0; i < block_validators.length; i++) { //loop for validating the validators
-                                    let percentage = (block_validators[i].validates / block_count) * 100;
-                                    if (percentage > 96.42) { // if the percentage is exceeded 
-                                        block_validators[i].validation_ratio = false; // vote must be rejected
+                                // block_validator array containing the total number of validators from proposal start height to proposal end height
+                                for (let i = 0; i < block_validators.length; i++) {
+                                    //loop for validating the validators
+                                    let percentage = (block_validators[i].validates / block_count) * 100; //calculating the percentage of a validator
+                                    if (percentage > 96.42) {
+                                        // if the percentage is exceeded
+                                        block_validators[i].validation_ratio = false; // validator's vote must be rejected
                                     } else {
-                                        block_validators[i].validation_ratio = true;    // vote is valid
+                                        block_validators[i].validation_ratio = true; // validator's vote is valid
                                     }
-                                    let valid_validator = await this.getValidatorsAPI(row.vote_end_height, block_validators[i].address); //getting validator at the vote end height
+                                    let valid_validator = await this.getValidatorsAPI(
+                                        row.vote_end_height,
+                                        block_validators[i].address
+                                    ); //getting validator at the vote end height for check if the validator disclosed preimage or not
                                     for (let valid of valid_validator) {
-                                        if (valid.address == block_validators[i].address) { //getting the validator from the list
-                                            if (valid.preimage.hash == "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000") {
+                                        if (valid.address == block_validators[i].address) {
+                                            //getting the validator from the list
+                                            if (
+                                                valid.preimage.hash ==
+                                                "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                                            ) {
                                                 block_validators[i].valid_preimage = false; // preimage is disclose so the validator vote rejected
                                             } else {
-                                                block_validators[i].valid_preimage = true;  //preimage is not disclosed , vote is valid
+                                                block_validators[i].valid_preimage = true; //preimage is not disclosed , vote is valid
                                             }
                                         }
                                     }
@@ -780,31 +796,48 @@ export class LedgerStorage extends Storages {
                                 let reject: number = 0;
                                 let quorum: number = 0;
                                 let Qn: number = 0;
-                                let satisfyQuorum: boolean = false;
+                                let satisfyQuorum: boolean = false; //if false proposal get rejected
                                 let F;
                                 let proposal_result: boolean = false;
                                 let result;
-                                let votes = await this.getProposalVotes(row.proposal_id);
-                                let Vn = await this.getTotalValidators();
+                                let votes = await this.getProposalVotes(row.proposal_id); // getting all votes of the proposal
+                                let Vn = await this.getTotalValidators(); // getting total number of validator to be used in formula
                                 if (votes) {
+                                    //checking if the proposal has votes
                                     for (let vote of votes) {
                                         let voter_address = vote.voter_address;
                                         let flag = true;
-                                        for (let i = 0; i < block_validators.length && flag; i++) { //loop for invalidating the votes of invalid validators
+                                        for (let i = 0; i < block_validators.length && flag; i++) {
+                                            //loop for invalidating the votes of invalid validators
                                             if (voter_address == block_validators[i].address) {
-                                                if (block_validators[i].validation_ratio == false && block_validators[i].valid_preimage == false) {
+                                                if (
+                                                    block_validators[i].validation_ratio == false &&
+                                                    block_validators[i].valid_preimage == false
+                                                ) {
                                                     ++reject;
                                                     flag = false;
                                                 }
                                             }
                                         }
                                         if (flag) {
+                                            //if the flag remains true that means validator is valid
                                             let ballot = vote.ballot;
-                                            let voter = await this.getValidatorsAPI(row.voting_end_height, voter_address);  //getting the preimage of validator for ballot decoding
-                                            let index_of_voter = voter.findIndex(elem => elem.address == voter_address)
+                                            let voter = await this.getValidatorsAPI(
+                                                row.voting_end_height,
+                                                voter_address
+                                            ); //getting the preimage of validator for ballot decoding
+                                            let index_of_voter = voter.findIndex(
+                                                (elem) => elem.address == voter_address
+                                            );
                                             let result_preimage_hash = new Hash(Buffer.alloc(Hash.Width));
-                                            result_preimage_hash.fromBinary(voter[index_of_voter].preimage_hash, Endian.Little);
-                                            let key_agora_admin = hashMulti(result_preimage_hash.data, Buffer.from(vote.app_name));
+                                            result_preimage_hash.fromBinary(
+                                                voter[index_of_voter].preimage_hash,
+                                                Endian.Little
+                                            );
+                                            let key_agora_admin = hashMulti(
+                                                result_preimage_hash.data,
+                                                Buffer.from(vote.app_name)
+                                            );
                                             let key_encrypt = Encrypt.createKey(key_agora_admin.data, vote.proposal_id); // generating the encryption key
                                             let answer = Encrypt.decrypt(ballot, key_encrypt).readInt8(); // getting the answer
                                             if (answer == 0) ++approved;
@@ -824,16 +857,16 @@ export class LedgerStorage extends Storages {
                                         }
                                     }
                                     if (satisfyQuorum == true && proposal_result == true) {
-                                        result = 'Passed';
+                                        result = "Passed";
                                         await this.updatePropsals(row.proposal_id, result);
                                     } else {
-                                        result = 'Rejected';
+                                        result = "Rejected";
                                         await this.updatePropsals(row.proposal_id, result);
                                     }
                                 }
                             }
                         }
-                })
+                });
                 resolve();
             })();
         });
@@ -868,8 +901,6 @@ export class LedgerStorage extends Storages {
                 });
         });
     }
-
-
 
     /**
      * Puts a block header updated history to database
@@ -1546,9 +1577,9 @@ export class LedgerStorage extends Storages {
 
                     unlock_height_query = `(
                             SELECT '${JSBI.add(
-                        height.value,
-                        JSBI.BigInt(2016)
-                    ).toString()}' AS unlock_height WHERE EXISTS
+                                height.value,
+                                JSBI.BigInt(2016)
+                            ).toString()}' AS unlock_height WHERE EXISTS
                             (
                                 SELECT
                                     *
@@ -1812,7 +1843,7 @@ export class LedgerStorage extends Storages {
             funding_amount: number,
             voting_start_height: number,
             voting_end_height: number,
-            proposer_id: number,
+            proposer_id: number
         ): Promise<void> {
             return new Promise<void>((resolve, reject) => {
                 storage
@@ -1844,7 +1875,7 @@ export class LedgerStorage extends Storages {
                             status,
                             voting_start,
                             voting_end,
-                            moment(submit_time).format('DD/MM/YYYY hh:mm:ss').toString(),
+                            moment(submit_time).format("DD/MM/YYYY hh:mm:ss").toString(),
                             detail,
                             fee_tx,
                             funding_amount,
@@ -1862,10 +1893,7 @@ export class LedgerStorage extends Storages {
             });
         }
 
-        function save_vote(
-            storage: LedgerStorage,
-            ballot: IBallot
-        ): Promise<void> {
+        function save_vote(storage: LedgerStorage, ballot: IBallot): Promise<void> {
             return new Promise<void>((resolve, reject) => {
                 storage
                     .run(
@@ -1892,7 +1920,7 @@ export class LedgerStorage extends Storages {
                             ballot.tx_hash.toBinary(Endian.Little),
                             ballot.voter_address,
                             ballot.sequence,
-                            moment(ballot.voting_time).format('DD/MM/YYYY hh:mm:ss').toString(),
+                            moment(ballot.voting_time).format("DD/MM/YYYY hh:mm:ss").toString(),
                         ]
                     )
                     .then(() => {
@@ -1906,11 +1934,11 @@ export class LedgerStorage extends Storages {
 
         function save_proposer(
             storage: LedgerStorage,
-            proposer_id: number, proposer_name: string,
+            proposer_id: number,
+            proposer_name: string,
             proposer_address: string
         ): Promise<void> {
             return new Promise<void>((resolve, reject) => {
-
                 storage
                     .run(
                         `INSERT INTO proposer
@@ -1955,7 +1983,9 @@ export class LedgerStorage extends Storages {
                                         let buffer = SmartBuffer.fromBuffer(block.txs[tx_idx].payload);
                                         let proposal = ProposalFeeData.deserialize(buffer);
                                         let proposal_id = proposal.proposal_id; // proposal id will be inserted in link below
-                                        let data = await RequestVotera(`http://3.34.7.93:1337/proposals/byid/A11111111`);
+                                        let data = await RequestVotera(
+                                            `http://3.34.7.93:1337/proposals/byid/A11111111`
+                                        );
                                         await save_proposal_fee(
                                             this,
                                             data.data.proposalId,
@@ -1972,14 +2002,16 @@ export class LedgerStorage extends Storages {
                                             data.data.vote_start_height,
                                             data.data.vote_end_height,
                                             135498
-                                        )
+                                        );
                                         break;
                                     }
                                     case ProposalData.HEADER: {
                                         let buffer = SmartBuffer.fromBuffer(block.txs[tx_idx].payload);
                                         let proposalData = ProposalData.deserialize(buffer);
-                                        let proposer_address = new PublicKey(proposalData.proposer_address.point).toString();
-                                        await save_proposer(this, 135498, 'test', proposer_address);
+                                        let proposer_address = new PublicKey(
+                                            proposalData.proposer_address.point
+                                        ).toString();
+                                        await save_proposer(this, 135498, "test", proposer_address);
                                         break;
                                     }
                                     case BallotData.HEADER: {
@@ -1995,9 +2027,9 @@ export class LedgerStorage extends Storages {
                                             tx_hash: block.merkle_tree[tx_idx],
                                             voter_address: new PublicKey(data.card.validator_address.point).toString(),
                                             sequence: data.sequence,
-                                            voting_time: new Date()
-                                        }
-                                        await save_vote(this, ballot)
+                                            voting_time: new Date(),
+                                        };
+                                        await save_vote(this, ballot);
                                         break;
                                     }
                                     default: {
