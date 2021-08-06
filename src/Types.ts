@@ -11,7 +11,7 @@
 
  *******************************************************************************/
 
-import { Height, OutputType, BlockHeader, Block, Transaction, JSBI } from 'boa-sdk-ts';
+import { Height, OutputType, BlockHeader, Block, Transaction, JSBI, Hash } from 'boa-sdk-ts';
 
 /**
  * The interface of the Validator
@@ -616,6 +616,82 @@ export interface ISPVStatus {
      */
     message: string;
 }
+
+/**
+ * The interface of the proposal validator
+ */
+export interface IProposalValidator {
+    /**
+     * Address
+     */
+    address: string;
+
+    /**
+     * The validates number of blocks
+     */
+    validates: number;
+
+    /**
+     * Validation ratio
+     */
+    validation_ratio?: boolean;
+
+    /**
+     * If no validator's preimage 'false' else 'true'
+     */
+    valid_preimage?: boolean;
+}
+
+/**
+ * The interface of the Ballot data
+ */
+export interface IBallot {
+    /**
+     * vote id
+     */
+    vote_id: number;
+
+    /**
+     * proposal id
+     */
+    proposal_id: string;
+
+    /**
+     * proposal id
+     */
+    app_name: string;
+
+    /**
+     * The Voter utxo
+     */
+    voter_utxo: Hash;
+
+    /**
+     * The ballot answer
+     */
+    ballot_answer: Buffer;
+
+    /**
+     * The transasaction hash
+     */
+    tx_hash: Hash;
+
+    /**
+     * The voter address
+     */
+    voter_address: string;
+
+    /**
+     * The sequence
+     */
+    sequence: number;
+
+    /**
+     * The voting time
+     */
+    voting_time: Date;
+}
+
 /**
  * The interface of block
  */
